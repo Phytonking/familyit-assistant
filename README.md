@@ -12,20 +12,30 @@ at a time.
   button or hold Space).
 - **Vision**: each turn sends the live frame plus a recent one (downscaled to 768px JPEG
   at 0.7 quality). "Look at this" sends frames without speaking.
-- **Brain**: Claude through the Anthropic API, streamed. The system prompt asks for short,
+- **Brain**: Claude, streamed, through one of three backends: the **Anthropic API**
+  (with a key), your **local Claude Code CLI** (`claude -p`, no key needed), or a
+  scripted **mock**. The system prompt asks for short,
   spoken-style, one-step-at-a-time guidance, asks you to show specific things, and gives
   safety warnings and "call a professional" advice.
 - **Voice out**: the reply is spoken sentence by sentence while it streams. Barge-in:
   start talking (or tap the agent tile) and it stops.
-- **Mock mode**: with no API key, a scripted agent answers so you can demo the whole loop.
+- **Backend banner**: the top banner shows which backend is answering (API / Claude CLI / mock).
 
 ## Run it
 
 ```bash
 npm install
-cp .env.example .env.local       # add ANTHROPIC_API_KEY=sk-ant-... (or leave empty for mock mode)
+cp .env.example .env.local       # optional: add ANTHROPIC_API_KEY=sk-ant-...
 npm run dev                      # http://localhost:3000
 ```
+
+Backend selection (override with `AGENT_BACKEND=api|claude-cli|mock`):
+
+1. `ANTHROPIC_API_KEY` set → **api**.
+2. Otherwise, if `claude` is found (`CLAUDE_CLI_PATH`, `PATH`, `~/.local/bin`,
+   `/opt/homebrew/bin`, `/usr/local/bin`) → **claude-cli**. It uses your Claude Code
+   login, so run `claude` once and sign in first.
+3. Otherwise → **mock**.
 
 Open it in **Chrome or Edge** on desktop for the best experience, click **Start call**, and
 allow camera + microphone. Headphones help: on speakers the mic hears the agent (there is
@@ -41,7 +51,12 @@ Other scripts: `npm run lint`, `npm run build`, `npm start`.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | _(empty)_ | Empty: mock mode. Server-side only, never sent to the browser. |
+| `AGENT_BACKEND` | auto | `api`, `claude-cli` or `mock`. A requested backend that isn't available falls back to mock. |
+| `ANTHROPIC_API_KEY` | _(empty)_ | api backend. Server-side only, never sent to the browser. |
+| `CLAUDE_CLI_MODEL` | `sonnet` | claude-cli backend model alias or id. `haiku` is faster. |
+| `CLAUDE_CLI_EFFORT` | `low` | Passed as `--effort`. |
+| `CLAUDE_CLI_PATH` | auto | Path to `claude` if it isn't found automatically. |
+| `CLAUDE_CLI_TIMEOUT_MS` | `60000` | The CLI process is killed after this. |
 | `ANTHROPIC_MODEL` | `claude-opus-5-5` | `claude-sonnet-5-5` or `claude-haiku-5-5` for faster turns. |
 | `ANTHROPIC_EFFORT` | `low` | `low`…`max`. Higher = slower, more thorough. |
 | `ANTHROPIC_MAX_TOKENS` | `4096` | Per reply. |
@@ -82,9 +97,45 @@ mic ─► SpeechToText (Web Speech) ─► utterance ─┐
 - `src/lib/server/claude.ts`: `client.beta.messages.stream` with base64 image blocks,
   a cached system prompt, `output_config.effort`, refusal handling + server-side fallback,
   and typed SDK error mapping.
+- `src/lib/server/claudeCli.ts`: the claude-cli backend (details below).
 - `src/lib/server/mockAgent.ts`: scripted, topic-aware replies (router, printer, cables,
   error screens, electrical, gas) streamed word by word. It knows whether frames were
   attached but doesn't analyse them.
+
+### Claude CLI backend
+
+Each turn spawns one CLI process (`child_process.spawn`, no shell, fixed argv; user text
+only ever goes to stdin as JSON) in a fresh empty temp directory:
+
+```
+claude -p --input-format stream-json --output-format stream-json --verbose
+  --include-partial-messages --model sonnet --effort low --system-prompt <SYSTEM_PROMPT>
+  --tools "" --strict-mcp-config --mcp-config '{"mcpServers":{}}'
+  --disable-slash-commands --safe-mode --no-session-persistence
+```
+
+- **Images**: stdin gets one stream-json user message in Anthropic message format,
+  `{"type":"user","message":{"role":"user","content":[text, {"type":"image","source":
+  {"type":"base64","media_type":"image/jpeg","data":...}}, ..., text]}}`, then stdin is
+  closed so the CLI answers once and exits. No temp image files, no Read tool.
+- **Streaming**: `stream_event` / `content_block_delta` / `text_delta` lines are forwarded
+  as `text` events, so sentence-by-sentence TTS starts on the first sentence.
+- **History**: the capped history (last 16 turns) is resent every turn. Earlier turns
+  become a plain-text transcript block, and the latest turn carries the frames. This is
+  stateless: nothing to clean up, barge-in partial replies are just text, and it's
+  identical to the API path. `--resume` would need session files on disk and
+  per-browser session bookkeeping, and an interrupted turn would leave a half-written
+  session.
+- **Locked down**: no tools (`--tools ""`, init reports `tools: []`), no MCP servers,
+  no slash commands/skills, no hooks/CLAUDE.md/plugins (`--safe-mode`), our system prompt
+  replaces Claude Code's, nothing persisted under `~/.claude/projects`, and an empty temp
+  cwd that is deleted afterwards.
+- **Cancellation**: barge-in/abort or the timeout sends SIGTERM to the CLI's process
+  group, then SIGKILL after 2s.
+- **Latency** (measured on an M-series Mac, 1 image, effort low): CLI startup to `init`
+  ≈0.31s; time to first token ≈1.2–1.3s with `sonnet`, ≈0.9–1.0s with `haiku`; full
+  short reply ≈1.8–2.7s. Each turn logs `[claude-cli] ... init= ttft= total= api= cost=`
+  on the server.
 
 ### Wire format
 
@@ -113,7 +164,9 @@ Camera and mic need a secure context (HTTPS or `localhost`).
   endpointing, push-to-talk, sentence-streamed TTS, barge-in, the streaming API route,
   Claude vision + conversation (with a key), error handling for denied/missing devices,
   network failures and API errors.
-- **Mocked (no key)**: the agent's brain. Replies are canned and only pretend to see.
+- **Real without a key**: the claude-cli backend is a real Claude call with real vision,
+  billed to your Claude Code login/subscription.
+- **Mocked (no key and no CLI)**: the agent's brain. Replies are canned and only pretend to see.
 
 ## Known limits
 
@@ -130,6 +183,12 @@ Camera and mic need a secure context (HTTPS or `localhost`).
   Don't expose the server publicly with your key.
 - End-to-end latency is speech endpoint (~1.1s silence) + time to first sentence + TTS
   start. Haiku 5.5 / Sonnet 5.5 at low effort feel snappier than Opus.
+
+- The claude-cli backend is for local prototyping only: it uses your personal Claude Code
+  login and usage limits, adds ~0.3s of process startup per turn, and runs one process
+  per turn. Don't serve it to other people; use the API backend for anything shared.
+- With `AGENT_BACKEND=claude-cli` and `ANTHROPIC_API_KEY` also set in the environment,
+  the CLI will authenticate with that key instead of your login.
 
 ## Next steps
 

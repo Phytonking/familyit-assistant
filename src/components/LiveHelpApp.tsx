@@ -43,11 +43,7 @@ export default function LiveHelpApp() {
   const inCall = state.phase === "starting" || state.phase === "active";
   return (
     <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-zinc-950 text-white">
-      {status?.mode === "mock" && (
-        <div className="z-30 bg-amber-400 px-4 py-1.5 text-center text-xs font-medium text-amber-950">
-          Mock mode: no ANTHROPIC_API_KEY is set, so a scripted agent is answering. It doesn&apos;t really see your camera.
-        </div>
-      )}
+      {status && <BackendBanner status={status} />}
       {statusError && (
         <div className="z-30 bg-red-500 px-4 py-1.5 text-center text-xs font-medium text-white">
           Can&apos;t reach the server. Check that the app is running and your connection is up.
@@ -83,7 +79,7 @@ function Lobby({ c, s, status }: { c: CallController; s: CallState; status: Agen
           <PhoneIcon /> {s.phase === "ended" ? "Start a new call" : "Start call"}
         </button>
         <p className="mt-3 text-xs text-white/50">
-          {status ? (status.mode === "live" ? `Agent: ${status.model}` : "Agent: scripted mock") : "Checking agent…"}
+          {status ? `Agent: ${backendLabel(status)}` : "Checking agent…"}
         </p>
         <ul className="mt-8 space-y-2 text-left text-sm text-white/60">
           <li>• You&apos;ll be asked for camera and microphone access.</li>
@@ -165,7 +161,7 @@ function CallView({ c, s, status }: { c: CallController; s: CallState; status: A
           <div className="flex items-center gap-2 rounded-full bg-black/40 px-3 py-1.5 text-xs backdrop-blur">
             <span className={`h-2 w-2 rounded-full ${s.phase === "active" ? "animate-pulse bg-red-500" : "bg-white/40"}`} />
             <span className="font-medium">{s.phase === "starting" ? "Connecting…" : "On call"}</span>
-            {status && <span className="hidden text-white/50 sm:inline">· {status.mode === "live" ? status.model : "mock agent"}</span>}
+            {status && <span className="hidden text-white/50 sm:inline">· {backendLabel(status)}</span>}
           </div>
           <AgentTile state={s.agentState} micLevel={s.micMuted ? 0 : s.micLevel} onTap={() => c.stopSpeaking()} />
         </header>
@@ -281,6 +277,34 @@ function CallView({ c, s, status }: { c: CallController; s: CallState; status: A
           voiceAvailable={voiceAvailable}
         />
       </aside>
+    </div>
+  );
+}
+
+function backendLabel(s: AgentStatus) {
+  if (s.mode === "api") return `Anthropic API · ${s.model}`;
+  if (s.mode === "claude-cli") return `Claude CLI · ${s.model}`;
+  return "scripted mock";
+}
+
+function BackendBanner({ status }: { status: AgentStatus }) {
+  if (status.mode === "mock") {
+    return (
+      <div className="z-30 bg-amber-400 px-4 py-1.5 text-center text-xs font-medium text-amber-950">
+        Mock mode: no API key and no Claude CLI, so a scripted agent is answering. It doesn&apos;t really see your camera.
+      </div>
+    );
+  }
+  if (status.mode === "claude-cli") {
+    return (
+      <div className="z-30 bg-indigo-500 px-4 py-1.5 text-center text-xs font-medium text-white">
+        Claude CLI mode: answering through your local Claude Code login (model: {status.model}). For local prototyping only.
+      </div>
+    );
+  }
+  return (
+    <div className="z-30 bg-teal-600/90 px-4 py-1 text-center text-[11px] font-medium text-white">
+      Anthropic API · {status.model}
     </div>
   );
 }

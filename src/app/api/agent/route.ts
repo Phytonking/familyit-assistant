@@ -3,13 +3,14 @@ import { getAgentConfig } from "@/lib/server/config";
 import { parseAgentRequest } from "@/lib/server/request";
 import { describeError, streamClaude } from "@/lib/server/claude";
 import { mockReply } from "@/lib/server/mockAgent";
+import { CliError, streamClaudeCli } from "@/lib/server/claudeCli";
 import { LIMITS, type AgentEvent, type AgentStatus } from "@/lib/protocol";
 
-/** GET /api/agent -> { mode: "live" | "mock", model } (never exposes the key). */
+/** GET /api/agent -> { mode: "api" | "claude-cli" | "mock", model } (never exposes the key). */
 export async function GET() {
   await connection(); // evaluate env at request time, not at build time
   const cfg = getAgentConfig();
-  const status: AgentStatus = { mode: cfg.mode, model: cfg.mode === "live" ? cfg.model : "mock" };
+  const status: AgentStatus = { mode: cfg.mode, model: cfg.model };
   return Response.json(status, { headers: { "Cache-Control": "no-store" } });
 }
 
@@ -56,18 +57,23 @@ export async function POST(req: Request) {
           open = false;
         }
       };
-      send({ type: "meta", mode: cfg.mode, model: cfg.mode === "live" ? cfg.model : "mock" });
+      send({ type: "meta", mode: cfg.mode, model: cfg.model });
       try {
         if (cfg.mode === "mock") {
           for await (const chunk of mockReply(parsed.turns, abort.signal)) send({ type: "text", text: chunk });
           send({ type: "done", stopReason: "end_turn" });
+        } else if (cfg.mode === "claude-cli") {
+          await streamClaudeCli(parsed.turns, cfg, abort.signal, send);
         } else {
           await streamClaude(parsed.turns, cfg, abort.signal, send);
         }
       } catch (err) {
         if (!abort.signal.aborted) {
           console.error("[api/agent]", err);
-          send({ type: "error", ...describeError(err) });
+          send({
+            type: "error",
+            ...(err instanceof CliError ? { code: `cli_${err.code}`, message: err.message } : describeError(err)),
+          });
           send({ type: "done", stopReason: null });
         }
       } finally {

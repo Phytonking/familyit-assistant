@@ -21,7 +21,7 @@ export async function streamClaude(
 ): Promise<void> {
   const stream = getClient().beta.messages.stream(
     {
-      model: cfg.model,
+      model: cfg.apiModel,
       max_tokens: cfg.maxTokens,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       messages: toAnthropicMessages(turns),

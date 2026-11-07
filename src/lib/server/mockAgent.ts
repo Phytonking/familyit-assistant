@@ -1,7 +1,7 @@
 import "server-only";
 import { LOOK_PROMPT, type WireTurn } from "@/lib/protocol";
 
-// Scripted agent used when no ANTHROPIC_API_KEY is configured. It doesn't look at the
+// Scripted agent used when neither an API key nor the claude CLI is available (or AGENT_BACKEND=mock). It doesn't look at the
 // images; it only knows whether frames were attached, so the call loop can be demoed.
 
 interface Script {

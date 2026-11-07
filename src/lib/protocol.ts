@@ -21,7 +21,8 @@ export type AgentEvent =
   | { type: "error"; message: string; code?: string }
   | { type: "done"; stopReason?: string | null };
 
-export type AgentMode = "live" | "mock";
+/** Which backend is answering. */
+export type AgentMode = "api" | "claude-cli" | "mock";
 
 export interface AgentStatus {
   mode: AgentMode;
