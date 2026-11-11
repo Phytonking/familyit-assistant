@@ -1,6 +1,7 @@
-# Live Help
+# FamilyIT assistant demo (Live Help)
 
-A prototype video-call app where you talk to an AI expert and show it your camera. Point
+The FamilyIT assistant demo: a prototype video-call app (codename "Live Help") where you
+talk to an AI expert and show it your camera. Point
 your phone at a router with a blinking orange light, a tangle of cables, an error on a
 screen, or a jammed printer, say what's wrong, and it talks you through the fix one step
 at a time.
@@ -23,13 +24,28 @@ at a time.
 
 ## Run it
 
+Prerequisites: Node.js 20.9+ (Next.js 16 minimum; current LTS 22 or 24 recommended), npm,
+and Chrome or Edge. Optional: an Anthropic API key, or Claude Code installed and logged in.
+
 ```bash
+git clone git@github.com:Phytonking/familyit-assistant.git
+cd familyit-assistant
 npm install
 cp .env.example .env.local       # optional: add ANTHROPIC_API_KEY=sk-ant-...
 npm run dev                      # http://localhost:3000
 ```
 
-Backend selection (override with `AGENT_BACKEND=api|claude-cli|mock`):
+Pick a backend in `.env.local`:
+
+- **Anthropic API**: set `ANTHROPIC_API_KEY=sk-ant-...` (from console.anthropic.com).
+  Best for sharing a running instance; billed to that key.
+- **Claude CLI** (no key): install Claude Code, run `claude` once and sign in, leave
+  `ANTHROPIC_API_KEY` empty. Uses your own Claude login and limits; local use only.
+- **Mock** (nothing needed): set `LIVE_HELP_MOCK=1` (or have neither of the above).
+  Canned replies, good for UI work.
+
+The top banner in the app shows which backend is answering. Backend selection (override
+with `AGENT_BACKEND=api|claude-cli|mock`):
 
 1. `ANTHROPIC_API_KEY` set → **api**.
 2. Otherwise, if `claude` is found (`CLAUDE_CLI_PATH`, `PATH`, `~/.local/bin`,
@@ -46,6 +62,18 @@ binds to all interfaces), open `https://<your-computer-ip>:3000` on the phone, a
 the certificate warning. Android Chrome works best; iOS Safari works with the limits below.
 
 Other scripts: `npm run lint`, `npm run build`, `npm start`.
+
+### Making changes
+
+- Branch off `main`, make the change, run `npm run lint` and `npm run build` (there are
+  no tests yet), then open a PR.
+- Restart `npm run dev` after editing `.env.local`; `NEXT_PUBLIC_*` values are baked in
+  at build time.
+- Where things live: call loop in `src/lib/callController.ts`, UI in `src/components/`,
+  the system prompt in `src/lib/server/prompt.ts`, backends in `src/lib/server/` (see
+  Architecture below).
+- This is Next.js 16 / React 19 and differs from older Next.js; see `AGENTS.md` (also
+  the guidance for coding agents) and `node_modules/next/dist/docs/`.
 
 ### Configuration (`.env.local`)
 
